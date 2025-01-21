@@ -1,3 +1,29 @@
+
+
+/*Nome ALUNO A-João Carlos da Silva Cunha
+Nome ALUNO B- Duarte Pereira Pires
+IPLEIRIA - Instituto Politécnico de Leiria
+ESTG - Escola Superior de Tecnologia e Gestão
+EAU- Licenciatura em Engenharia Automóvel
+SEEV - Sistemas Elétricos e Eletrónicos de Veículos
+
+TP1: Pretende-se  neste  trabalho  prático  a  implementação  de um limitador de rotação para motores de combustão interna. O limitador apenas atua na igniçõdo veículo deixando assim,
+ o controlo injeção sem alterações.
+ O limitador de RPM pode ser atuado de uas formas distintas:
+- via manual através de um botão implementado no veículo ou via bluetooth onde se pode inserir o valor desejado para o limite de RPM.
+
+Há outras funcionalidades onde o utilizador pode requisitar dados como:
+_ultimo limite de RPm implementado
+-temperatura de gases de escape
+-RPM exato a que o motor se encontra
+-erros no sensor de temperatura
+e até proceder á desativação do limitar de rotação.
+
+Temos outras funcionalidades neste sistema como leds de indicação se o Limitador de rotação está ativo e outro caso a temperatura exceda o nivel. .*/
+
+
+
+
 #include <Wire.h>
 #include <math.h>
 #include "Arduino.h"
@@ -16,7 +42,7 @@
 #define TEMP_LED_PIN 5
 #define REV_LED_PIN 18
 #define TranPin 19
-#define IgnCoilPin 2
+//#define IgnCoilPin 2
 #define BOTAO 32  // Pin 32 (GPIO32)
 
 #define EEPROM_SIZE 1
@@ -43,7 +69,7 @@ DallasTemperature sensors(&oneWire);
 //tasks
 void vBrain(void *pvParameters);
 
-//handler
+//Função chamada   quando receber dados I2C
 void receiveEvent(int);
 
 //interrupcao
@@ -96,25 +122,27 @@ void vBrain(void *pvParameters) {
 	int Message = 0; //Recebido por bluethooth
 	int i = 0;
 	float temp_Millisec = 0;
-	int RevLimit = 2500;
-	int atualRPM = 0;
-	float temperatureC = 0;
+	int RevLimit = 2500; //definelimite rpm inicial
+	int atualRPM = 0;	//Armazane a valor de rpm nesa variável
+	float temperatureC = 0;  //Armazena temperatura em ºcelsius
 
 	while (true) {
-
+					//tenta obter mutex para aceder a fila rpm
 		if (xSemaphoreTake(xMutexQueueRPM, portMAX_DELAY) == pdTRUE) {
-			xQueuePeek(xAtualRPM, &atualRPM, (TickType_t) 250);
+			xQueuePeek(xAtualRPM, &atualRPM, (TickType_t) 250); // vai a qeue obter uma copia do valor  de RPM
 		}
 		xSemaphoreGive(xMutexQueueRPM);
 
+		//verifica se há dados disponiveis no bluetooth
+
 		if (SerialBT.available()) {
-			char incomingChar = SerialBT.read();
+			char incomingChar = SerialBT.read();  //Le um caracter recebido via bluetoot
 			if (incomingChar != '\n')
-				msg += String(incomingChar);
+				msg += String(incomingChar);  // acumula caracteres ate receber o enter
 
 			if (msg == "LIMIT") { // Solicitação da RevLimit atual
 				SerialBT.print("RevLimit: ");
-				SerialBT.println(RevLimit);
+				SerialBT.println(RevLimit); // Envia o limite rpm para o display do bluetooth
 				Message = 0;
 				msg = "";
 			}
@@ -170,6 +198,8 @@ void vBrain(void *pvParameters) {
 			digitalWrite(REV_LED_PIN, LOW); // Transistor é ativado, o que fecha o circuit de alimentacao da  bobine
 		}
 
+		//solicita a leitura do sensor de temperatura
+
 		sensors.requestTemperatures(); // Envia comando para ler temperatura
 		temperatureC = sensors.getTempCByIndex(0); // Obtém a temperatura em Celsius
 		if (temperatureC != DEVICE_DISCONNECTED_C) {
@@ -187,10 +217,11 @@ void vBrain(void *pvParameters) {
 				digitalWrite(TEMP_LED_PIN, LOW); // Desliga o LED de temperatura
 			}
 		} else {
-			Serial.println("Erro ao ler o sensor de temperatura!");
+			//Serial.println("Erro ao ler o sensor de temperatura!");
+			SerialBT.print("erro ao ler sensor temp");
 		}
 
-		vTaskDelay(100 / portTICK_PERIOD_MS);
+		vTaskDelay(100 / portTICK_PERIOD_MS);//aguarda 100ms antes de repetir o loop
 	}
 }
 
@@ -198,8 +229,10 @@ void vBrain(void *pvParameters) {
 void receiveEvent(int bytes) {
 	int receivedRpm;
 	if (bytes >= sizeof(receivedRpm)) {
-		// Lê o valor enviado pelo transmissor
+		// Lê o valor enviado pelo transmissor(escravo)
+
 		Wire.readBytes((char*) &receivedRpm, sizeof(receivedRpm));
+		// tenta obeter mutex para aceder a fia que contem os dados rpm
 
 		if (xSemaphoreTake(xMutexQueueRPM, portMAX_DELAY) == pdTRUE) {
 			xQueueOverwrite(xAtualRPM, &receivedRpm);
@@ -209,11 +242,11 @@ void receiveEvent(int bytes) {
 }
 
 void IRAM_ATTR botao_itnterrupt(void) {
-	intervalo = millis() - tempoatual;
-	tempoatual = millis();
+	intervalo = millis() - tempoatual; //calcula o tempo desde a ultima interrupção
+	tempoatual = millis();			  // Atualiza o tempo atual
 
 	if(intervalo > DEBOUNCE){
-		estadoRevLimiter = !estadoRevLimiter;
+		estadoRevLimiter = !estadoRevLimiter;  //alterna o estado
 	}
 }
 
